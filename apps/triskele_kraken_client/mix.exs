@@ -18,11 +18,18 @@ defmodule TriskeleKrakenClient.MixProject do
   def application do
     [
       mod: {Triskele.KrakenClient.Application, []},
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
   defp deps do
-    []
+    [
+      {:finch, "~> 0.19"},
+      {:mint_web_socket, "~> 1.0"},
+      {:jason, "~> 1.4"},
+      {:decimal, "~> 2.1"},
+      {:phoenix_pubsub, "~> 2.1"},
+      {:mox, "~> 1.1", only: :test}
+    ]
   end
 end
