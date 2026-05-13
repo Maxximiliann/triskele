@@ -66,6 +66,19 @@ turn. Single line, no decoration, at the very end of the
 response. The emoji is the visual anchor for the operator's
 scan; keep the exact format.
 
+### Terminal-echo suppression for handoff output
+
+When writing substantive content to /tmp/cc-share.out for
+advisor handoff (reports, audits, findings), do NOT duplicate
+the full content in the terminal response. Reply with a
+one-line confirmation noting what was written and the 📄
+marker. The operator uploads the file to the advisor;
+terminal duplication is redundant.
+
+Short status messages, tool outputs, and inline answers that
+aren't being written to the share file continue to render
+normally.
+
 ### Reporting style
 
 Default to compressed reporting.
@@ -240,7 +253,7 @@ Summary of remaining work after CRC fix:
 1. `mix dialyzer` (verification step, no subagent needed)
 2. `WebSocket.PublicTest` — characterization tests for existing module
 3. `WebSocket.AuthTest` — characterization tests using Mox
-4. `WebSocket.Private` — new module + tests (full TDD applies here)
+4. `WebSocket.Private` — new module + tests (full TDD applies here; architecture per DEV-010 in triskele-prompts)
 5. Application supervisor wiring (depends on item 4)
 6. Live smoke test against `wss://ws.kraken.com/v2`
 7. PR creation and merge (operator handles)
