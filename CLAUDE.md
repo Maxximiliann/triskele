@@ -98,6 +98,43 @@ only natural insertion point is adjacent to transient
 content, add a comment marker or move the transient section
 to make the structural separation visible.
 
+### Tooling preferences
+
+For codebase searches, use rg (ripgrep) instead of find/grep
+chains. ripgrep is installed at /usr/bin/rg and auto-ignores
+deps/, _build/, .git/, and .gitignore-listed paths.
+
+Common patterns:
+  rg "pattern" apps/                    # search apps/
+  rg --type elixir "TransportError"     # filter by language
+  rg -l "Mint.WebSocket"                # files only
+  rg -A 5 "defmodule"                   # 5 lines of context after
+
+Use grep/find only as fallback if rg is unavailable in the
+current environment.
+
+### Test execution patterns
+
+For iterative test loops (writing tests, fixing failures,
+re-running after small edits), prefer `mix test --stale` over
+full-suite runs. Mix tracks file-change dependencies and runs
+only affected tests, typically completing in 1-5 seconds vs.
+~20 seconds for the full kraken_client suite.
+
+For rerunning previously-failed tests after a fix, use
+`mix test --failed`. Combines with --stale:
+`mix test --stale --failed`.
+
+Run the full suite at gate-check boundaries:
+- Before any git commit (the pre-commit hook handles this
+  automatically)
+- Before marking a Phase 1 item complete
+- After dependency updates or PLT rebuilds
+- After test_helper.exs or mix.exs changes
+
+For tests filtered by tag (e.g., `--only phase_1`), --stale
+applies within the filtered set.
+
 ## Operator policy
 
 The operator (Maximilian) handles ALL of the following:
