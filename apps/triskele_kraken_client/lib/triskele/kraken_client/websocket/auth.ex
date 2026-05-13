@@ -52,6 +52,8 @@ defmodule Triskele.KrakenClient.WebSocket.Auth do
 
   @impl GenServer
   def init(_opts) do
+    Process.flag(:sensitive, true)
+
     case REST.get_websocket_token() do
       {:ok, token} ->
         schedule_refresh()
