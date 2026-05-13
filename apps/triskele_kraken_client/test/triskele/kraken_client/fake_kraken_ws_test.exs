@@ -122,6 +122,64 @@ defmodule Triskele.KrakenClient.FakeKrakenWsTest do
     end
   end
 
+  describe "set_expect_token/2 — runtime token update" do
+    test "set_expect_token/2 updates the validated token at runtime" do
+      fake = start_supervised!({FakeKrakenWs, [expect_token: "token_a"]})
+      port = FakeKrakenWs.port(fake)
+
+      {conn, websocket, ref} = ws_connect(port)
+
+      # Initial subscribe with token_a — matches expect_token, succeeds.
+      frame_a1 =
+        Jason.encode!(%{
+          "method" => "subscribe",
+          "params" => %{"channel" => "executions", "token" => "token_a"}
+        })
+
+      {:ok, {conn1, ws1}} = ws_send_text(conn, websocket, ref, frame_a1)
+      {:ok, response1} = ws_recv_json(conn1, ws1, ref)
+      assert response1["success"] == true
+      refute Map.has_key?(response1, "error")
+
+      # Rotate the expected token at runtime.
+      :ok = FakeKrakenWs.set_expect_token(fake, "token_b")
+
+      # Force the parent fake to process the cast (sync via :port call), then
+      # give the BEAM a moment for the parent's send-to-child to land in the
+      # child's mailbox before the next TCP frame arrives. Without this, the
+      # subscribe frame's TCP message could reach the child before the
+      # :set_expect_token message and validate against the stale token.
+      _ = FakeKrakenWs.port(fake)
+      Process.sleep(20)
+
+      # Subscribe with the now-stale token_a — fails with ESession.
+      frame_a2 =
+        Jason.encode!(%{
+          "method" => "subscribe",
+          "params" => %{"channel" => "executions", "token" => "token_a"}
+        })
+
+      {:ok, {conn2, ws2}} = ws_send_text(conn1, ws1, ref, frame_a2)
+      {:ok, response2} = ws_recv_json(conn2, ws2, ref)
+      assert response2["success"] == false
+      assert response2["error"] == "ESession:Invalid session"
+
+      # Subscribe with the new token_b — succeeds.
+      frame_b =
+        Jason.encode!(%{
+          "method" => "subscribe",
+          "params" => %{"channel" => "executions", "token" => "token_b"}
+        })
+
+      {:ok, {conn3, ws3}} = ws_send_text(conn2, ws2, ref, frame_b)
+      {:ok, response3} = ws_recv_json(conn3, ws3, ref)
+      assert response3["success"] == true
+      refute Map.has_key?(response3, "error")
+
+      ws_close(conn3, ws3, ref)
+    end
+  end
+
   describe "backward compatibility — no :expect_token" do
     test "public-style subscribe without token receives per-symbol confirmation" do
       fake = start_supervised!(FakeKrakenWs)

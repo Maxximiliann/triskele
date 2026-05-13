@@ -54,6 +54,20 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
 
   When `:expect_token` is NOT set, the existing public-channel subscribe
   flow (per-symbol confirmation) runs unchanged.
+
+  The expected token can be updated at runtime via `set_expect_token/2`.
+  This is needed by tests that simulate mid-stream token rotation (e.g.,
+  the ESession retry-succeeds scenario in PrivateTest).
+
+  **Implementation note:** the active child process captures `expect_token`
+  as a closure argument in its receive loop. To propagate a runtime token
+  update to the already-running child, the parent GenServer sends a
+  `{:set_expect_token, token}` message directly to the child pid. The
+  `ws_loop/2` function handles this message by tail-calling itself with the
+  updated token — option (a) from the design consideration. This is more
+  direct than option (b) (child calling back to parent on each subscribe)
+  and avoids a potential deadlock if the child's subscribe handler called
+  GenServer.call back to the parent.
   """
 
   use GenServer
@@ -112,6 +126,21 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
   @spec stop(pid()) :: :ok
   def stop(server), do: GenServer.stop(server)
 
+  @doc """
+  Updates the expected token for an already-running fake instance.
+
+  The new value takes effect for the NEXT subscribe frame the active child
+  process receives. Because the child runs as a spawned process with the
+  token captured as a closure argument, this cast sends a message to the
+  child pid directly so `ws_loop/2` can update its internal loop argument.
+
+  If no child connection is active at the time of the cast, the parent
+  updates `state.expect_token` so the value is used for the next accepted
+  connection.
+  """
+  @spec set_expect_token(pid(), String.t() | nil) :: :ok
+  def set_expect_token(server, token), do: GenServer.cast(server, {:set_expect_token, token})
+
   @impl GenServer
   def init(opts) do
     {:ok, listen_socket} =
@@ -149,6 +178,19 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
   end
 
   def handle_cast(:drop_connection, state), do: {:noreply, state}
+
+  def handle_cast({:set_expect_token, token}, %{conn_pid: pid} = state) when is_pid(pid) do
+    # Propagate the token update to the active child process so its ws_loop
+    # uses the new expected value on the next subscribe message. The child
+    # handles {:set_expect_token, token} in ws_loop/2.
+    send(pid, {:set_expect_token, token})
+    {:noreply, %{state | expect_token: token}}
+  end
+
+  def handle_cast({:set_expect_token, token}, state) do
+    # No active connection; just update parent state for the next accepted connection.
+    {:noreply, %{state | expect_token: token}}
+  end
 
   @impl GenServer
   def handle_info(:accept, state) do
@@ -266,6 +308,11 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
       {:push, json} ->
         send_ws_text(socket, json)
         ws_loop(socket, expect_token)
+
+      {:set_expect_token, new_token} ->
+        # Runtime token update from set_expect_token/2. Tail-call with the
+        # new token so subsequent subscribe frames are validated against it.
+        ws_loop(socket, new_token)
     after
       1_000 ->
         send_ws_text(socket, Jason.encode!(%{"channel" => "heartbeat"}))
