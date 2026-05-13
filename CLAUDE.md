@@ -135,6 +135,13 @@ Run the full suite at gate-check boundaries:
 For tests filtered by tag (e.g., `--only phase_1`), --stale
 applies within the filtered set.
 
+For sustained development sessions where you're iterating on
+a single module or describe block, run `mix test.watch --only
+<tag>` in a dedicated pane. The watcher reruns affected tests
+automatically on file save, eliminating the "save, switch
+panes, type mix test, wait" loop. Combines with all standard
+mix test flags. Ctrl-C twice to stop.
+
 ## Operator policy
 
 The operator (Maximilian) handles ALL of the following:
