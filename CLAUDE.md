@@ -82,6 +82,22 @@ Default to compressed reporting.
 - Default volume: short. Expand only when operator asks or
   when ambiguity requires surfacing.
 
+### Document section placement
+
+When adding new sections to project documents (CLAUDE.md,
+DEVIATIONS_LOG.md, Bible sections, prompt files), check the
+surrounding context for sections marked TEMPORARY,
+removal-targeted, or otherwise transient before choosing
+placement. Permanent content should not sit adjacent to
+removal-targeted blocks — it's too easy for a future cleanup
+sweep to catch the wrong section.
+
+Place permanent additions before transient sections, with at
+least one heading or section break separating them. If the
+only natural insertion point is adjacent to transient
+content, add a comment marker or move the transient section
+to make the structural separation visible.
+
 ## Operator policy
 
 The operator (Maximilian) handles ALL of the following:
