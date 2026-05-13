@@ -19,6 +19,14 @@ defmodule Triskele.KrakenClient.WebSocket.Auth do
   before `WebSocket.Auth`. If they are started concurrently, `init/1`'s
   REST call will fail and the supervisor will retry until they come up —
   this works but is wasteful. Prefer explicit ordering in the child spec.
+
+  ## Config
+
+  `start_link/1` accepts one optional opt:
+
+  - `:name` — GenServer registered name. Defaults to `__MODULE__`. Tests
+    that need isolated instances pass a unique atom so each one registers
+    under its own name.
   """
 
   use GenServer
@@ -33,12 +41,13 @@ defmodule Triskele.KrakenClient.WebSocket.Auth do
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @spec current_token() :: String.t()
-  def current_token do
-    GenServer.call(__MODULE__, :current_token)
+  @spec current_token(GenServer.server()) :: String.t()
+  def current_token(server \\ __MODULE__) do
+    GenServer.call(server, :current_token)
   end
 
   @impl GenServer
