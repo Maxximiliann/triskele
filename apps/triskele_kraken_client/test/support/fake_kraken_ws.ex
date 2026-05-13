@@ -27,13 +27,33 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
   The CRC32 algorithm over book levels is Phase 2's domain; this fake does
   not compute it automatically.
 
-  ## Known limitation — single active connection
+  ## Multi-instance support
 
-  This fake tracks one `conn_pid` at a time. The production WebSocket module
-  manages two connections (public + private). Tests for private channels
-  (`subscribe_own_trades/0`, `subscribe_open_orders/0`) will need a second
-  fake instance started on a different port. That is deferred until the
-  private WebSocket path is exercised in Phase 1 integration tests.
+  Multiple `FakeKrakenWs` instances can run concurrently in the same test
+  suite. Each call to `start_link/1` produces an independent GenServer with
+  its own TCP listen socket on a distinct OS-assigned random port (`:gen_tcp`
+  port 0). All state — `listen_socket`, `port`, `conn_pid`, `conn_ref` — is
+  stored in per-instance struct fields; there is no shared module-level state.
+
+  Typical usage for tests that need both a public and a private fake:
+
+      public_fake = start_supervised!(FakeKrakenWs)
+      private_fake = start_supervised!({FakeKrakenWs, [expect_token: "tok"]})
+      public_port = FakeKrakenWs.port(public_fake)
+      private_port = FakeKrakenWs.port(private_fake)
+
+  ## Private-channel token validation (`:expect_token` opt)
+
+  When `start_link/1` is called with `expect_token: "some_token"`, the fake
+  validates the `params["token"]` field on every incoming `subscribe` message:
+
+  - **Match** → responds with the Kraken v2 subscribe-success shape
+    (`"success" => true`, `"result"` echoes channel and snap options).
+  - **Mismatch or missing** → responds with the Kraken v2 subscribe-error
+    shape (`"success" => false`, `"error" => "ESession:Invalid session"`).
+
+  When `:expect_token` is NOT set, the existing public-channel subscribe
+  flow (per-symbol confirmation) runs unchanged.
   """
 
   use GenServer
@@ -42,7 +62,7 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
 
   @ws_guid "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-  defstruct [:listen_socket, :port, :conn_pid, :conn_ref]
+  defstruct [:listen_socket, :port, :conn_pid, :conn_ref, :expect_token]
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -93,13 +113,20 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
   def stop(server), do: GenServer.stop(server)
 
   @impl GenServer
-  def init(_opts) do
+  def init(opts) do
     {:ok, listen_socket} =
       :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
 
     {:ok, {_, port}} = :inet.sockname(listen_socket)
     send(self(), :accept)
-    {:ok, %__MODULE__{listen_socket: listen_socket, port: port, conn_pid: nil}}
+
+    {:ok,
+     %__MODULE__{
+       listen_socket: listen_socket,
+       port: port,
+       conn_pid: nil,
+       expect_token: Keyword.get(opts, :expect_token)
+     }}
   end
 
   @impl GenServer
@@ -128,6 +155,7 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
     case :gen_tcp.accept(state.listen_socket, 2_000) do
       {:ok, socket} ->
         parent = self()
+        expect_token = state.expect_token
 
         # The accepted socket is owned by THIS GenServer. The child can't
         # take ownership itself (:gen_tcp.controlling_process/2 must be
@@ -138,7 +166,7 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
         pid =
           spawn(fn ->
             receive do
-              :owned -> handle_connection(socket, parent)
+              :owned -> handle_connection(socket, parent, expect_token)
             after
               5_000 -> :ok
             end
@@ -173,11 +201,11 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
     :gen_tcp.close(state.listen_socket)
   end
 
-  defp handle_connection(socket, _parent) do
+  defp handle_connection(socket, _parent, expect_token) do
     case do_ws_handshake(socket) do
       :ok ->
         :inet.setopts(socket, active: true)
-        ws_loop(socket)
+        ws_loop(socket, expect_token)
 
       _error ->
         :ok
@@ -223,11 +251,11 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
     Base.encode64(:crypto.hash(:sha, key <> @ws_guid))
   end
 
-  defp ws_loop(socket) do
+  defp ws_loop(socket, expect_token) do
     receive do
       {:tcp, ^socket, data} ->
-        handle_ws_data(socket, data)
-        ws_loop(socket)
+        handle_ws_data(socket, data, expect_token)
+        ws_loop(socket, expect_token)
 
       {:tcp_closed, ^socket} ->
         :ok
@@ -237,36 +265,46 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
 
       {:push, json} ->
         send_ws_text(socket, json)
-        ws_loop(socket)
+        ws_loop(socket, expect_token)
     after
       1_000 ->
         send_ws_text(socket, Jason.encode!(%{"channel" => "heartbeat"}))
-        ws_loop(socket)
+        ws_loop(socket, expect_token)
     end
   end
 
-  defp handle_ws_data(socket, data) do
+  defp handle_ws_data(socket, data, expect_token) do
     case decode_ws_frame(data) do
-      {:ok, :text, payload} -> handle_ws_message(socket, payload)
+      {:ok, :text, payload} -> handle_ws_message(socket, payload, expect_token)
       {:ok, :ping, _} -> send_ws_pong(socket)
       {:ok, :close, _} -> :ok
       _ -> :ok
     end
   end
 
-  defp handle_ws_message(socket, payload) do
+  # When :expect_token is set, subscribe messages route through token validation.
+  # When nil (public-channel mode), the standard per-symbol confirmation runs.
+  # Two function heads keep ABCSize within bounds for each head independently.
+  defp handle_ws_message(socket, payload, expect_token) when is_binary(expect_token) do
     case Jason.decode(payload) do
       {:ok, %{"method" => "ping"} = msg} ->
-        send_ws_text(
-          socket,
-          Jason.encode!(%{
-            "method" => "pong",
-            "req_id" => Map.get(msg, "req_id"),
-            "time_in" => DateTime.to_iso8601(DateTime.utc_now()),
-            "time_out" => DateTime.to_iso8601(DateTime.utc_now()),
-            "success" => true
-          })
-        )
+        send_ws_pong_response(socket, msg)
+
+      {:ok, %{"method" => "subscribe", "params" => params}} ->
+        send_token_subscribe_response(socket, params, expect_token)
+
+      {:ok, %{"method" => "unsubscribe", "params" => params}} ->
+        send_unsubscribe_confirmation(socket, params["channel"], params["symbol"] || [])
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp handle_ws_message(socket, payload, nil) do
+    case Jason.decode(payload) do
+      {:ok, %{"method" => "ping"} = msg} ->
+        send_ws_pong_response(socket, msg)
 
       {:ok, %{"method" => "subscribe", "params" => params}} ->
         send_subscribe_confirmation(socket, params["channel"], params["symbol"] || [])
@@ -276,6 +314,56 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
 
       _ ->
         :ok
+    end
+  end
+
+  defp send_ws_pong_response(socket, msg) do
+    send_ws_text(
+      socket,
+      Jason.encode!(%{
+        "method" => "pong",
+        "req_id" => Map.get(msg, "req_id"),
+        "time_in" => DateTime.to_iso8601(DateTime.utc_now()),
+        "time_out" => DateTime.to_iso8601(DateTime.utc_now()),
+        "success" => true
+      })
+    )
+  end
+
+  # Handles subscribe messages when :expect_token is set (private-channel
+  # flow). Validates params["token"] against the configured expected value
+  # and sends either the Kraken v2 success or error shape accordingly.
+  # The public-channel flow (send_subscribe_confirmation/3) is unchanged
+  # and unreachable from this function.
+  defp send_token_subscribe_response(socket, params, expect_token) do
+    token = Map.get(params, "token")
+
+    if token == expect_token do
+      send_ws_text(
+        socket,
+        Jason.encode!(%{
+          "method" => "subscribe",
+          "result" => %{
+            "channel" => params["channel"],
+            "snap_orders" => params["snap_orders"],
+            "snap_trades" => params["snap_trades"]
+          },
+          "success" => true,
+          "time_in" => DateTime.to_iso8601(DateTime.utc_now()),
+          "time_out" => DateTime.to_iso8601(DateTime.utc_now())
+        })
+      )
+    else
+      send_ws_text(
+        socket,
+        Jason.encode!(%{
+          "method" => "subscribe",
+          "error" => "ESession:Invalid session",
+          "success" => false,
+          "time_in" => DateTime.to_iso8601(DateTime.utc_now()),
+          "time_out" => DateTime.to_iso8601(DateTime.utc_now())
+        })
+      )
     end
   end
 
