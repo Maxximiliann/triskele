@@ -26,9 +26,20 @@ defmodule Triskele.KrakenClient.WebSocket.Public do
 
   ## Config
 
-  The default WebSocket URL is `wss://ws.kraken.com/v2` and can be overridden
-  via `Application.get_env(:triskele_kraken_client, :public_ws_url, ...)`. For
-  tests, pass `url:` in the `start_link` keyword list.
+  All `start_link/1` opts are optional and default to production values:
+
+  - `:url` — WebSocket endpoint. Defaults to
+    `Application.get_env(:triskele_kraken_client, :public_ws_url,
+    "wss://ws.kraken.com/v2")`.
+  - `:pubsub` — `Phoenix.PubSub` server name to broadcast on. Defaults to
+    `Triskele.PubSub`.
+  - `:name` — GenServer registered name. Defaults to `__MODULE__`. Tests
+    that need isolated instances pass a unique atom so each one registers
+    under its own name.
+  - `:registry` — initial `SubscriptionRegistry` value. Defaults to
+    `SubscriptionRegistry.new()`. Tests can inject a pre-populated registry
+    to set up scenarios without going through the subscribe/confirm
+    round-trip.
   """
 
   use GenServer
@@ -87,7 +98,8 @@ defmodule Triskele.KrakenClient.WebSocket.Public do
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   @spec subscribe_book(String.t() | [String.t(), ...]) :: :ok
@@ -118,12 +130,18 @@ defmodule Triskele.KrakenClient.WebSocket.Public do
 
   def unsubscribe_ticker(symbol) when is_binary(symbol), do: unsubscribe_ticker([symbol])
 
+  @spec subscription_registry(GenServer.server()) :: SubscriptionRegistry.t()
+  def subscription_registry(server \\ __MODULE__) do
+    GenServer.call(server, :subscription_registry)
+  end
+
   # ── GenServer callbacks ────────────────────────────────────────────────────
 
   @impl GenServer
   def init(opts) do
     url = Keyword.get(opts, :url, default_ws_url())
     pubsub = Keyword.get(opts, :pubsub, Triskele.PubSub)
+    sub_reg = Keyword.get_lazy(opts, :registry, &SubscriptionRegistry.new/0)
     send(self(), :connect)
     Process.send_after(self(), :check_staleness, @staleness_check_ms)
 
@@ -131,7 +149,7 @@ defmodule Triskele.KrakenClient.WebSocket.Public do
      %__MODULE__{
        url: url,
        pubsub: pubsub,
-       sub_reg: SubscriptionRegistry.new(),
+       sub_reg: sub_reg,
        local_book: %{},
        last_message_at: %{}
      }}
@@ -164,6 +182,10 @@ defmodule Triskele.KrakenClient.WebSocket.Public do
         else: updated
 
     {:reply, :ok, new_state}
+  end
+
+  def handle_call(:subscription_registry, _from, state) do
+    {:reply, state.sub_reg, state}
   end
 
   @impl GenServer

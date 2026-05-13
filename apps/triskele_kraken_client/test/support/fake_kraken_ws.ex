@@ -128,7 +128,25 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
     case :gen_tcp.accept(state.listen_socket, 2_000) do
       {:ok, socket} ->
         parent = self()
-        pid = spawn(fn -> handle_connection(socket, parent) end)
+
+        # The accepted socket is owned by THIS GenServer. The child can't
+        # take ownership itself (:gen_tcp.controlling_process/2 must be
+        # called by the current owner). Spawn the child blocked on :owned,
+        # transfer ownership, then unblock it — that ordering ensures the
+        # child can safely call setopts(active: true) and receive the
+        # subsequent {:tcp, ...} messages itself.
+        pid =
+          spawn(fn ->
+            receive do
+              :owned -> handle_connection(socket, parent)
+            after
+              5_000 -> :ok
+            end
+          end)
+
+        :ok = :gen_tcp.controlling_process(socket, pid)
+        send(pid, :owned)
+
         ref = Process.monitor(pid)
         {:noreply, %{state | conn_pid: pid, conn_ref: ref}}
 
@@ -148,20 +166,27 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
 
   @impl GenServer
   def terminate(_reason, state) do
+    if state.conn_pid && Process.alive?(state.conn_pid) do
+      Process.exit(state.conn_pid, :shutdown)
+    end
+
     :gen_tcp.close(state.listen_socket)
   end
 
   defp handle_connection(socket, _parent) do
-    with :ok <- do_ws_handshake(socket) do
-      :gen_tcp.controlling_process(socket, self())
-      :inet.setopts(socket, active: true)
-      ws_loop(socket)
+    case do_ws_handshake(socket) do
+      :ok ->
+        :inet.setopts(socket, active: true)
+        ws_loop(socket)
+
+      _error ->
+        :ok
     end
   end
 
   defp do_ws_handshake(socket) do
-    with {:ok, request} <- recv_http_request(socket) do
-      key = parse_ws_key(request)
+    with {:ok, request} <- recv_http_request(socket),
+         {:ok, key} <- parse_ws_key(request) do
       accept = compute_accept(key)
 
       response =
@@ -188,8 +213,10 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
   end
 
   defp parse_ws_key(request) do
-    [_, key] = Regex.run(~r/Sec-WebSocket-Key: ([^\r\n]+)/, request)
-    String.trim(key)
+    case Regex.run(~r/Sec-WebSocket-Key: ([^\r\n]+)/i, request) do
+      [_, key] -> {:ok, String.trim(key)}
+      nil -> {:error, :no_ws_key}
+    end
   end
 
   defp compute_accept(key) do
@@ -334,18 +361,21 @@ defmodule Triskele.KrakenClient.FakeKrakenWs do
   defp parse_length(127, <<len::64, rest::binary>>), do: {len, rest}
   defp parse_length(len, rest) when len <= 125, do: {len, rest}
 
-  defp extract_payload(1, len, <<mask::binary-size(4), payload::binary-size(len), rest::binary>>) do
+  defp extract_payload(1, len, data) do
+    <<mask::binary-size(4), payload::binary-size(len), rest::binary>> = data
+
     unmasked =
       payload
       |> :binary.bin_to_list()
       |> Enum.with_index()
-      |> Enum.map(fn {byte, i} -> byte ^^^ :binary.at(mask, rem(i, 4)) end)
+      |> Enum.map(fn {byte, i} -> bxor(byte, :binary.at(mask, rem(i, 4))) end)
       |> :binary.list_to_bin()
 
     {unmasked, rest}
   end
 
-  defp extract_payload(0, len, <<payload::binary-size(len), rest::binary>>) do
+  defp extract_payload(0, len, data) do
+    <<payload::binary-size(len), rest::binary>> = data
     {payload, rest}
   end
 end
