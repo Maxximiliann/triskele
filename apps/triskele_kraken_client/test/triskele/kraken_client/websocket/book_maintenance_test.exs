@@ -48,7 +48,7 @@ defmodule Triskele.KrakenClient.WebSocket.BookMaintenanceTest do
     %{"price" => "45282.1", "qty" => "1.0000000"},
     %{"price" => "45281.0", "qty" => "1.0000000"},
     %{"price" => "45280.3", "qty" => "1.54592586"},
-    %{"price" => "45279.0", "qty" => "0.799000"},
+    %{"price" => "45279.0", "qty" => "0.7990000"},
     %{"price" => "45277.6", "qty" => "3.310103"},
     %{"price" => "45277.5", "qty" => "3.0000000"},
     %{"price" => "45277.3", "qty" => "1.54602737"},

@@ -20,7 +20,7 @@ defmodule Triskele.KrakenClient.WebSocket.Connection do
   def connect(url) do
     uri = URI.parse(url)
     {http_scheme, ws_scheme} = url_schemes(uri.scheme)
-    host = String.to_charlist(uri.host)
+    host = uri.host
     port = uri.port || default_port(http_scheme)
     path = uri.path || "/"
 

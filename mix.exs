@@ -45,6 +45,7 @@ defmodule Triskele.MixProject do
       plt_file: {:no_warn, "dialyzer/triskele.plt"},
       plt_add_apps: [:mix],
       ignore_warnings: "dialyzer/.dialyzer_ignore.exs",
+      list_unused_filters: true,
       flags: [:error_handling, :underspecs]
     ]
   end
