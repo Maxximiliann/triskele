@@ -213,6 +213,22 @@ All new work happens in isolated worktrees per superpowers:using-git-worktrees.
 The convention is `.worktrees/<branch-name>` at project root (already
 added to `.gitignore`).
 
+### CI-green gate
+
+No phase milestone is declared complete until CI is green on the
+PR's HEAD SHA. Local `mix test` passing is necessary but not
+sufficient — local environments routinely differ from CI in ways
+that hide gaps (warm BEAM application state, set env vars,
+cached build artifacts, installed system packages). See DEV-012
+and DEV-014 for two Phase 1 incidents in this class.
+
+The "ship" status for any phase requires: (1) local quality
+gates green per `## Quality gates` below, (2) CI workflow green
+on the same SHA the operator pushes, and (3) live smoke green
+against the real environment where applicable to the phase. A
+PR with red CI is not "Phase N complete" — it is "Phase N needs
+CI fix."
+
 ## Subagent dispatch rules
 
 When the parent agent dispatches a subagent (via Task tool, per
