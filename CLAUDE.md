@@ -349,6 +349,61 @@ The parent dispatches a subagent when:
 - Test run requiring output interpretation
 - Research requiring external doc reading
 
+### Standard dispatch protocol
+
+Every dispatch prompt the operator composes for a subagent
+includes implicit conventions. The phrase "Standard dispatch
+protocol applies" in a dispatch indicates the following
+constants without restating them:
+
+- Scope is explicit: which files are in scope, which are
+  out of scope. Files commonly tempting to "fix in
+  passing" — .credo.exs, .formatter.exs, mix.exs,
+  DEV-* files, unrelated production modules — are listed
+  as explicitly out of scope.
+- Deliverable goes to /tmp/cc-share.out under a heading
+  matching the dispatch title. The deliverable structure
+  is specified in the dispatch with section headers.
+- If a blocker is encountered at any step (scope violation,
+  unexpected file state, contradictory evidence, unclear
+  instruction), STOP, write findings to /tmp/cc-share.out
+  under a "## Blocker" heading, and wait for operator
+  direction. Do not improvise around the blocker.
+- Commits are local only — no push, no PR. The operator
+  handles git push and PR work.
+- One outer task per dispatch. No "while I'm here"
+  cleanups, no adjacent-file fixes, no scope expansion.
+- Echo suppression for /tmp/cc-share.out per standing
+  instructions (already documented in this file at
+  "### Terminal-echo suppression for handoff output").
+
+When a dispatch prompt omits these reminders and instead
+writes "Standard dispatch protocol applies", treat that as
+shorthand for the full list above.
+
+### Deliverable schema norms
+
+Subagent deliverables to /tmp/cc-share.out follow these
+quality norms:
+
+- Prefer 3-5 sharp sections to 8-10 broad ones. Every
+  section should answer a specific question the operator
+  posed in the dispatch.
+- Cite targeted lines (file:line and a few-line excerpt)
+  over full source dumps. Full function bodies are
+  warranted only when the surrounding code is load-bearing
+  for the question being answered.
+- When proposing a fix, specify: file, function or line
+  range, exact change shape (str_replace pattern, new
+  lines, or one-token replacement). Do not implement.
+- When a verification step produces unexpected results,
+  report what was found and STOP. Do not pivot mid-
+  dispatch to investigate adjacent concerns.
+- Hypothesis rankings: when multiple causes are plausible,
+  enumerate them with one-sentence justifications each and
+  a clear "MOST LIKELY" or numeric ranking. Do not bury
+  the recommendation in prose.
+
 ## Escalation triggers
 
 Escalate to operator (status: BLOCKED) when any of these occur:
