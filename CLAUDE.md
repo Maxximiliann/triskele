@@ -434,6 +434,40 @@ depth — both layers retained per architectural decision).
 
 Phase-tagged tests run with `mix test --only phase_N`.
 
+## Dependency hygiene
+
+When any dep is added or updated in any `mix.exs` `deps()` list,
+inspect `deps/<dep>/mix.exs` `application/0` callback at the time
+of the change:
+
+- **If the dep has `mod: {SomeModule, args}`** → it is an OTP
+  application that must be started before code that uses it
+  runs. Add it to `:extra_applications` OR start it explicitly
+  as a child in a supervisor you control.
+- **If the dep has no `mod:`** → it is a library. No declaration
+  needed; Mix loads it transitively.
+- **Test-only deps** (`only: :test`) that are OTP applications
+  go in the `Mix.env() == :test` branch of
+  `extra_applications(Mix.env())` (prod-or-shared OTP-application
+  deps go in the unconditional branch; test-only OTP-application
+  deps go in the test-only branch). See
+  `apps/triskele_kraken_client/mix.exs` for the canonical
+  example.
+
+Verification after the change:
+
+    MIX_ENV=test mix run -e 'IO.inspect(Application.started_applications() |> Enum.map(&elem(&1, 0)))'
+
+The added apps must appear in the output. Long-running developer
+shells warm the BEAM's application state and mask missing
+declarations; CI surfaces them.
+
+See DEV-014 (the Phase 1 CI incident this rule was authored from)
+and the memo `feedback_implicit_startup_dependencies.md` for the
+general rule and three documented instances. See Bible § 13.3
+for the general "verify premise at dependency boundaries" rule
+this OTP-specific audit instantiates.
+
 ## When in doubt
 
 - Check the Bible first
