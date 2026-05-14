@@ -313,6 +313,33 @@ defmodule Triskele.KrakenClient.WebSocket.Private do
     end
   end
 
+  defp handle_response({:data, _ref, data}, %{websocket: nil} = state) do
+    # WebSocket frame data arrived during HTTP upgrade phase: Kraken
+    # pipelined a server frame with the 101 Switching Protocols
+    # response such that Mint emitted :data without a preceding
+    # :done in the same stream batch. state.websocket has not yet
+    # been constructed via Mint.WebSocket.new/5 (that happens in
+    # the :done handler below).
+    #
+    # We log the dropped frame at :warning with byte length and a
+    # short hex preview for forensic visibility. Phase 2 should
+    # decide whether to buffer these bytes and re-decode after
+    # upgrade completes, vs. continuing to drop them (Kraken
+    # appears to re-send any caller-observable state at
+    # subscribe-confirmation time, so dropping may remain safe).
+    preview =
+      data
+      |> binary_part(0, min(byte_size(data), 32))
+      |> Base.encode16()
+
+    Logger.warning(
+      "WebSocket.Private dropping pre-upgrade :data frame " <>
+        "(#{byte_size(data)} bytes, first #{min(byte_size(data), 32)} hex: #{preview})"
+    )
+
+    state
+  end
+
   defp handle_response({:data, _ref, data}, state) do
     case Connection.decode(state.websocket, data) do
       {:ok, websocket, frames} ->

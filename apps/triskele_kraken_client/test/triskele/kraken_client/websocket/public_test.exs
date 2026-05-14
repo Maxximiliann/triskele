@@ -228,6 +228,45 @@ defmodule Triskele.KrakenClient.WebSocket.PublicTest do
     end
   end
 
+  describe "handle_response/2 — pre-upgrade :data guard" do
+    test "drops :data frame when websocket struct is not yet constructed",
+         %{url: url, pubsub: pubsub} do
+      name = unique_name("Public")
+
+      start_supervised!({Public, [name: name, url: url, pubsub: pubsub]})
+
+      # Wait for the connection to reach :connected (so state.conn has the
+      # post-upgrade :websockets private set by Mint.WebSocket.new/5).
+      # Subsequent inbound TCP messages will reach Mint.WebSocket.stream/2's
+      # stream_http1 branch (mint_web_socket lib/mint/web_socket.ex:416),
+      # which wraps raw TCP data as `{:data, ref, bytes}` responses — exactly
+      # the response shape that triggers handle_response({:data, ...}, ...).
+      wait_until(fn ->
+        state = :sys.get_state(name)
+        state.status == :connected
+      end)
+
+      # Forcibly reset websocket: nil + status: :connecting on a running
+      # GenServer to reproduce the pre-upgrade state that Kraken triggers
+      # in production by pipelining a server frame with the 101 Switching
+      # Protocols response. FakeKrakenWs separates handshake from frames
+      # by ≥1 s (its receive/after window), so the condition never arises
+      # naturally in the test harness.
+      :sys.replace_state(name, fn s ->
+        %{s | websocket: nil, status: :connecting}
+      end)
+
+      # FakeKrakenWs sends a heartbeat every 1 s of socket idle. Capture
+      # log around that window to observe the pre-upgrade :data drop.
+      log =
+        capture_log(fn ->
+          Process.sleep(1_500)
+        end)
+
+      assert log =~ "WebSocket.Public dropping pre-upgrade :data frame"
+    end
+  end
+
   # ────────────────────────────────────────────────────────────────────────
   # Helpers
   # ────────────────────────────────────────────────────────────────────────
