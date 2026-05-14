@@ -22,9 +22,12 @@ defmodule TriskeleKrakenClient.MixProject do
   def application do
     [
       mod: {Triskele.KrakenClient.Application, []},
-      extra_applications: [:logger, :crypto]
+      extra_applications: extra_applications(Mix.env())
     ]
   end
+
+  defp extra_applications(:test), do: [:logger, :crypto, :phoenix_pubsub, :mox]
+  defp extra_applications(_), do: [:logger, :crypto, :phoenix_pubsub]
 
   defp deps do
     [
