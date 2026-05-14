@@ -2,23 +2,33 @@ defmodule Triskele.KrakenClient.WebSocket.Auth do
   @moduledoc """
   Manages the WebSocket authentication token for Kraken's private channel.
 
-  Fetches a token via `REST.get_websocket_token/0` at startup and refreshes
-  it 5 minutes before it expires (Kraken tokens last 15 minutes). The
-  current token is handed to the WebSocket process via `current_token/0`.
+  Fetches a token via `REST.get_websocket_token/0` shortly after init
+  (in `handle_continue/2`) and refreshes it 5 minutes before it expires
+  (Kraken tokens last 15 minutes). The current token is handed to the
+  WebSocket process via `current_token/0`.
 
-  If the REST call fails at startup, `init/1` returns `{:stop, reason}` —
-  the supervisor will retry. After a successful boot, refresh failures log
-  an error but do not crash the process; the previous token remains valid
-  for the remainder of its window. Refresh runs in a spawned Task so the
-  GenServer mailbox stays responsive during the REST round-trip.
+  The initial fetch runs in `handle_continue/2` rather than `init/1` so
+  the GenServer starts immediately without blocking on network I/O.
+  This sidesteps a Finch pool-worker race during supervisor boot — even
+  though the Finch pool supervisor is up before Auth starts, its workers
+  register asynchronously; a synchronous REST call in `init/1` can race
+  against worker registration. See comments in `handle_continue/2`.
+
+  If the initial REST call fails, `handle_continue/2` returns `{:stop,
+  reason, state}` — the supervisor restarts Auth. After a successful boot,
+  refresh failures log an error but do not crash the process; the previous
+  token remains valid for the remainder of its window. Refresh runs in a
+  spawned Task so the GenServer mailbox stays responsive during the REST
+  round-trip.
 
   ## Boot ordering
 
   This process depends on `SecretKeeper`, `Nonce`, and `RateLimit` being
   started first. The Application supervisor's child list must place those
-  before `WebSocket.Auth`. If they are started concurrently, `init/1`'s
-  REST call will fail and the supervisor will retry until they come up —
-  this works but is wasteful. Prefer explicit ordering in the child spec.
+  before `WebSocket.Auth`. If they are started concurrently, the initial
+  REST call (in `handle_continue/2`) will fail and the supervisor will
+  retry until they come up — this works but is wasteful. Prefer explicit
+  ordering in the child spec.
 
   ## Config
 
@@ -53,14 +63,23 @@ defmodule Triskele.KrakenClient.WebSocket.Auth do
   @impl GenServer
   def init(_opts) do
     Process.flag(:sensitive, true)
+    {:ok, %{token: nil}, {:continue, :fetch_initial_token}}
+  end
 
+  @impl GenServer
+  def handle_continue(:fetch_initial_token, state) do
     case REST.get_websocket_token() do
       {:ok, token} ->
         schedule_refresh()
-        {:ok, %{token: token}}
+        {:noreply, %{state | token: token}}
 
       {:error, reason} ->
-        {:stop, reason}
+        # Auth without a token is non-functional; crash and let the
+        # supervisor restart. By the time we restart, Finch pool workers
+        # are guaranteed to be available (the pool was started long
+        # before Auth's first init), so the race condition that motivated
+        # this design cannot recur on restart.
+        {:stop, reason, state}
     end
   end
 

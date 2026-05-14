@@ -63,6 +63,10 @@ defmodule Triskele.KrakenClient.WebSocket.AuthTest do
 
       assert Process.whereis(name) == pid
       assert Process.alive?(pid)
+
+      # Synchronize on handle_continue completion so Mox.verify_on_exit!
+      # sees the count-bounded expect as consumed.
+      wait_until(fn -> Auth.current_token(name) == "tok_start_link" end)
     end
   end
 
@@ -79,19 +83,21 @@ defmodule Triskele.KrakenClient.WebSocket.AuthTest do
       assert Auth.current_token(name) == "tok_init"
     end
 
-    test "REST failure at boot causes start_link to return {:error, reason}" do
+    test "REST failure during handle_continue causes Auth to terminate with the normalized error" do
       name = unique_name("Auth")
 
       expect(HTTPClientMock, :post, fn _url, _headers, _body ->
         {:error, %Mint.TransportError{reason: :timeout}}
       end)
 
-      # init returning {:stop, reason} causes start_link to return
-      # {:error, reason}, but the briefly-alive GenServer is linked to
-      # us; trap exits so the EXIT signal doesn't take down the test.
+      # init/1 returns immediately; handle_continue/2 runs the REST call
+      # and on failure returns {:stop, reason, state}. The linked Auth
+      # process exits with the normalized %Error{} struct as reason.
+      # Trap exits so the EXIT signal doesn't take down the test.
       Process.flag(:trap_exit, true)
+      {:ok, pid} = Auth.start_link(name: name)
 
-      assert {:error, err} = Auth.start_link(name: name)
+      assert_receive {:EXIT, ^pid, err}, 5_000
       assert err.kind == :network_timeout
     end
   end
