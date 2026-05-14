@@ -353,7 +353,7 @@ Escalate to operator (status: BLOCKED) when any of these occur:
 
 3. **CRC diagnosis or similar diagnostic ambiguity**: Tasks explicitly
    marked in resumption notes or DEVIATIONS_LOG as requiring operator
-   consultation. Per Phase 1 close-out, this includes the CRC fixture.
+   consultation.
 
 4. **Push/merge actions**: All git push and gh pr operations.
    Never executed by Claude Code; always operator-handled.
