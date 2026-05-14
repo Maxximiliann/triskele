@@ -4,10 +4,12 @@ defmodule Triskele.KrakenClient.Supervisor do
 
   ## Boot order
 
-  Children are started in the listed order. The order matters: SecretKeeper,
-  Nonce, and RateLimit must be running before Auth can fetch its first
-  WebSocket token. Phoenix.PubSub must be running before WebSocket.Public
-  and WebSocket.Private (both broadcast to it).
+  Children are started in the listed order. The order matters: Finch boots
+  first; Auth's REST token fetch depends on the `Triskele.KrakenClient.Finch`
+  named pool being available before `Auth.init/1` runs. SecretKeeper, Nonce,
+  and RateLimit must be running before Auth can fetch its first WebSocket
+  token. Phoenix.PubSub must be running before WebSocket.Public and
+  WebSocket.Private (both broadcast to it).
 
   ## Restart policy
 
@@ -37,6 +39,11 @@ defmodule Triskele.KrakenClient.Supervisor do
   @impl Supervisor
   def init(_opts) do
     children = [
+      {Finch,
+       name: Triskele.KrakenClient.Finch,
+       pools: %{
+         "https://api.kraken.com" => [size: 4, count: 1, protocols: [:http2]]
+       }},
       SecretKeeper,
       Nonce,
       RateLimit,

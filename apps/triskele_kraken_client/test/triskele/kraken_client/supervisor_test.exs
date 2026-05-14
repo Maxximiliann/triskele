@@ -48,12 +48,12 @@ defmodule Triskele.KrakenClient.SupervisorTest do
   end
 
   describe "start_link/1" do
-    test "starts all 7 children and each child is alive" do
+    test "starts all 8 children and each child is alive" do
       sup_pid = start_supervised!(Triskele.KrakenClient.Supervisor)
 
       children = Supervisor.which_children(sup_pid)
 
-      assert length(children) == 7
+      assert length(children) == 8
 
       for {_id, child_pid, _type, _modules} <- children do
         assert is_pid(child_pid), "expected a PID, got #{inspect(child_pid)}"
