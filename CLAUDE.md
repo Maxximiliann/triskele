@@ -393,6 +393,21 @@ When a dispatch prompt omits these reminders and instead
 writes "Standard dispatch protocol applies", treat that as
 shorthand for the full list above.
 
+### Skill firing in dispatched work
+
+Dispatched subagents do not run `superpowers:using-superpowers`
+(the skill's `<SUBAGENT-STOP>` block suppresses it for
+subagents). The 1% rule does not bind dispatched subagents;
+they execute the focused dispatch scope.
+
+A subagent may still invoke task-relevant skills via the Skill
+tool. When a skill's recommendation conflicts with the dispatch's
+stated out-of-scope, **dispatch scope wins**. The subagent
+STOPS, writes the conflict to `/tmp/cc-share.out` under a
+`## Blocker` heading, and waits for operator direction. Do not
+silently suppress the skill or silently expand scope. See Bible
+§ 15.9.2 for the full treatment.
+
 ### Deliverable schema norms
 
 Subagent deliverables to /tmp/cc-share.out follow these
