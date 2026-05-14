@@ -42,7 +42,7 @@ defmodule Triskele.KrakenClient.Supervisor do
       {Finch,
        name: Triskele.KrakenClient.Finch,
        pools: %{
-         "https://api.kraken.com" => [size: 4, count: 1, protocols: [:http2]]
+         "https://api.kraken.com" => [size: 4, count: 1, protocols: [:http1]]
        }},
       SecretKeeper,
       Nonce,
