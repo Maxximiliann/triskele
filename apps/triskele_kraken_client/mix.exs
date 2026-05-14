@@ -10,19 +10,33 @@ defmodule TriskeleKrakenClient.MixProject do
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
       elixir: "~> 1.17",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
   end
 
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
   def application do
     [
       mod: {Triskele.KrakenClient.Application, []},
-      extra_applications: [:logger]
+      extra_applications: extra_applications(Mix.env())
     ]
   end
 
+  defp extra_applications(:test), do: [:logger, :crypto, :phoenix_pubsub, :mox]
+  defp extra_applications(_), do: [:logger, :crypto, :phoenix_pubsub]
+
   defp deps do
-    []
+    [
+      {:finch, "~> 0.19"},
+      {:mint_web_socket, "~> 1.0"},
+      {:jason, "~> 1.4"},
+      {:decimal, "~> 2.1"},
+      {:phoenix_pubsub, "~> 2.1"},
+      {:mox, "~> 1.1", only: :test}
+    ]
   end
 end

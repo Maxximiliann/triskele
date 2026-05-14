@@ -27,7 +27,8 @@ defmodule Triskele.MixProject do
       {:dialyxir, "~> 1.4", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:mix_test_watch, "~> 1.3.0", only: [:test, :dev], runtime: false}
     ]
   end
 
@@ -45,6 +46,7 @@ defmodule Triskele.MixProject do
       plt_file: {:no_warn, "dialyzer/triskele.plt"},
       plt_add_apps: [:mix],
       ignore_warnings: "dialyzer/.dialyzer_ignore.exs",
+      list_unused_filters: true,
       flags: [:error_handling, :underspecs]
     ]
   end

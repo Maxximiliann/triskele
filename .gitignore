@@ -16,3 +16,7 @@ priv/data/
 node_modules/
 dialyzer/*.plt
 dialyzer/*.plt.hash
+
+# Local-only session scratch / logs
+SESSION_START_PROMPT.md
+cc-session-*.log
