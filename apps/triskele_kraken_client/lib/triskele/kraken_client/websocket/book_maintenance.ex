@@ -23,13 +23,27 @@ defmodule Triskele.KrakenClient.WebSocket.BookMaintenance do
   immune to this provided Kraken sends the same price in the same string format
   across snapshot and update messages (which it does in practice).
 
-  ## String precision
+  ## String precision (resolved)
 
-  Kraken WS v2 sends price and qty in the book channel as JSON strings, which
-  preserves trailing zeros. The CRC is computed from those raw strings. If a
-  JSON number is received instead (e.g. from FakeKrakenWs in tests), `Float.to_string`
-  is used — trailing zeros will be lost. Phase 2 will verify precision handling
-  once live feed integration testing is complete.
+  Kraken WS v2 actually sends `price` and `qty` in the book channel as JSON
+  numbers, not strings (verified by `:erlang.trace` capture against live
+  `wss://ws.kraken.com/v2`). The production decoders at `Public.handle_frame/2`
+  and `Private.handle_frame/2` use `Jason.decode(json, floats: :decimals)` so
+  numbers arrive in this module as `%Decimal{}` structs carrying the wire-format
+  digit sequence exactly (Decimal's coefficient + exponent preserve the
+  original precision).
+
+  `crc_str/1` has three clauses:
+
+  - **`%Decimal{}`** — the production path. Uses `Decimal.to_string(d, :normal)`
+    to render the wire-format digits, then strips the decimal point and leading
+    zeros per Kraken's spec.
+  - **`binary`** — retained for test-fixture compatibility. Existing fixtures
+    construct level maps directly (bypassing Jason) with string price/qty;
+    those continue to work. Fixture regeneration to use `%Decimal{}` shapes
+    matching the live wire is a follow-up.
+  - **`float`** — defense-in-depth fallback, unreachable by design in
+    production now that the decode option is in place. Retained intentionally.
   """
 
   alias Triskele.KrakenClient.Types.BookUpdate
@@ -181,6 +195,13 @@ defmodule Triskele.KrakenClient.WebSocket.BookMaintenance do
     v
     |> String.replace(".", "")
     |> lstrip_zeros()
+  end
+
+  defp crc_str(%Decimal{} = d) do
+    d
+    |> Decimal.to_string(:normal)
+    |> String.replace(".", "")
+    |> String.trim_leading("0")
   end
 
   defp crc_str(v) when is_float(v) do

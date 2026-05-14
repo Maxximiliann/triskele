@@ -346,7 +346,7 @@ defmodule Triskele.KrakenClient.WebSocket.Public do
   # ── WebSocket frame handling ───────────────────────────────────────────────
 
   defp handle_frame({:text, json}, state) do
-    case Jason.decode(json) do
+    case Jason.decode(json, floats: :decimals) do
       {:ok, msg} -> dispatch_message(msg, state)
       {:error, _} -> state
     end
