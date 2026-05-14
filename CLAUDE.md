@@ -163,6 +163,8 @@ mix test flags. Ctrl-C twice to stop.
 
 ### Diagnostic discipline
 
+Premise enumeration is now an explicit step under both rules: before composing the next fix attempt (§ 13.2) or the first design at a dependency boundary (§ 13.3), enumerate the premises the work rests on, the verification method applied to each, and the rationale for any premise proceeding unverified. See Bible § 13.2 / § 13.3 for the full discipline.
+
 When a fix doesn't produce the expected result, STOP before
 iterating. Re-examine the premise — verify the diagnosis
 against upstream sources (library docs, GitHub issues,
