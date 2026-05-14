@@ -69,4 +69,4 @@ Triskele is a fault-tolerant intra-exchange triangular arbitrage system for the 
 ## Build Phases
 
 See `docs/PROJECT_BIBLE.md` §11 for the ten-phase construction plan.
-Current status: Phase 0 (bootstrap).
+Current status: Phase 1 complete; Phase 2 not started.
