@@ -1,7 +1,8 @@
 defmodule Triskele.KrakenClient.Parsers do
   @moduledoc "Public API"
 
-  @spec decimal_from_term(nil | binary() | integer() | float()) :: Decimal.t() | nil
+  @spec decimal_from_term(nil | Decimal.t() | binary() | integer() | float()) :: Decimal.t() | nil
+  def decimal_from_term(%Decimal{} = d), do: d
   def decimal_from_term(nil), do: nil
   def decimal_from_term(v) when is_binary(v), do: Decimal.new(v)
   def decimal_from_term(v) when is_integer(v), do: Decimal.new(v)

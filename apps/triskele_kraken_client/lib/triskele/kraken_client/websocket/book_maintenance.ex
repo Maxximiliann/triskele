@@ -181,6 +181,8 @@ defmodule Triskele.KrakenClient.WebSocket.BookMaintenance do
     |> Enum.map_join("", fn {_, %{price_crc: p, qty_crc: q}} -> p <> q end)
   end
 
+  defp to_decimal(%Decimal{} = d), do: d
+
   defp to_decimal(v) when is_binary(v), do: Decimal.new(v)
 
   defp to_decimal(v) when is_float(v) do
