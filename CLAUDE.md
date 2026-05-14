@@ -79,6 +79,12 @@ Short status messages, tool outputs, and inline answers that
 aren't being written to the share file continue to render
 normally.
 
+- After every write or overwrite of /tmp/cc-share.out,
+  invoke `subl /tmp/cc-share.out` (backgrounded with `&` if
+  blocking is a concern). This brings the deliverable to the
+  operator's editor automatically. Sublime brings the existing
+  buffer forward on repeated opens — no duplicate windows.
+
 ### Reporting style
 
 Default to compressed reporting.
