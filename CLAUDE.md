@@ -161,6 +161,18 @@ automatically on file save, eliminating the "save, switch
 panes, type mix test, wait" loop. Combines with all standard
 mix test flags. Ctrl-C twice to stop.
 
+### Diagnostic discipline
+
+When a fix doesn't produce the expected result, STOP before
+iterating. Re-examine the premise — verify the diagnosis
+against upstream sources (library docs, GitHub issues,
+protocol specs) or empirical evidence — before attempting
+another fix on the same mental model. Signals: same error
+class after the fix; error fires faster than the premise
+predicts; no upstream source cites the failure mode
+addressed. See Bible §13.2 for the full treatment and
+DEV-013 for the origin entry.
+
 ## Operator policy
 
 The operator (Maximilian) handles ALL of the following:
